@@ -60,6 +60,7 @@ pub fn run(program: &str, args: &[&str], timeout: Duration) -> Result<String, St
 #[derive(Debug)]
 pub(crate) struct RunOutput {
     pub success: bool,
+    #[cfg(target_os = "macos")]
     pub code: Option<i32>,
     pub status: String,
     pub stdout: String,
@@ -67,12 +68,12 @@ pub(crate) struct RunOutput {
 }
 
 impl RunOutput {
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "macos"))]
     pub(crate) fn success(stdout: impl Into<String>) -> Self {
         Self { success: true, code: Some(0), status: "exit status: 0".into(), stdout: stdout.into(), stderr: String::new() }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "macos"))]
     pub(crate) fn exit(code: i32, stdout: impl Into<String>, stderr: impl Into<String>) -> Self {
         Self { success: false, code: Some(code), status: format!("exit status: {code}"), stdout: stdout.into(), stderr: stderr.into() }
     }
@@ -125,7 +126,14 @@ fn run_command_with_output(mut cmd: Command, program: &str, timeout: Duration) -
     }
     let text = |pipe: std::thread::JoinHandle<Vec<u8>>| String::from_utf8_lossy(&pipe.join().unwrap_or_default()).into_owned();
     let (out, err) = (text(stdout), text(stderr));
-    Ok(RunOutput { success: status.success(), code: status.code(), status: status.to_string(), stdout: out, stderr: err })
+    Ok(RunOutput {
+        success: status.success(),
+        #[cfg(target_os = "macos")]
+        code: status.code(),
+        status: status.to_string(),
+        stdout: out,
+        stderr: err,
+    })
 }
 
 /// Captures at most 8 MB of a child's pipe and drains the rest on its own thread.
@@ -664,7 +672,9 @@ mod run_tests {
             run_with_output("/bin/sh", &["-c", "printf 'assessments disabled\\n'; printf 'diagnostic\\n' >&2; exit 1"], Duration::from_secs(30))
                 .unwrap();
         assert!(!output.success);
+        #[cfg(target_os = "macos")]
         assert_eq!(output.code, Some(1));
+        assert_eq!(output.status, "exit status: 1");
         assert_eq!(output.stdout, "assessments disabled\n");
         assert_eq!(output.stderr, "diagnostic\n");
     }
